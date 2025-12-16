@@ -1,0 +1,10 @@
+*.o
+*.so
+*.a
+vm
+*.bin
+*.~undo-tree~
+.gdb_history
+lib1.c
+rand.S
+temp.*
