@@ -17,6 +17,13 @@ WWindowShouldClose(State *s)
 }
 
 void
+WGetMousePosition(State *s)
+{
+  RE(s) = GetMouseX();
+  RF(s) = GetMouseY();
+}
+
+void
 make_color(State *s)
 {
   colors[nc] = (Color) {RA(s), RB(s), RC(s), RD(s)};

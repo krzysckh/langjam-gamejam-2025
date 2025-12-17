@@ -169,6 +169,7 @@ EndDrawing:         ['W 'E 'n 'd 'D 'r 'a 'w 'i 'n 'g 0]
 ClearBackground:    ['W 'C 'l 'e 'a 'r 'B 'a 'c 'k 'g 'r 'o 'u 'n 'd 0]
 DrawCircle:         ['W 'D 'r 'a 'w 'C 'i 'r 'c 'l 'e 0]
 SetWindowSize:      ['W 'S 'e 't 'W 'i 'n 'd 'o 'w 'S 'i 'z 'e 0]
+GetMousePosition:   ['W 'G 'e 't 'M 'o 'u 's 'e 'P 'o 's 'i 't 'i 'o 'n 0]
 
 make_color:         ['m 'a 'k 'e '_ 'c 'o 'l 'o 'r 0]
 
@@ -192,12 +193,13 @@ mainloop:
         get2(x, ra)
         get2(y, rb)
         call4(0, DrawCircle, ra, rb, 30, rd)
-        addn(rb, 10)
-        addn(ra, 10)
-        modulo(ra, WIDTH)
-        modulo(rb, HEIGHT)
-        put2(x, ra)
-        put2(y, rb)
+
+        call0(0, GetMousePosition)
+
+        ;; modulo(ra, WIDTH)
+        ;; modulo(rb, HEIGHT)
+        put2(x, re)
+        put2(y, rf)
 
         call0(0, EndDrawing)
 
