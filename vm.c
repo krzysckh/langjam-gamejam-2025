@@ -15,10 +15,10 @@
   * normal instruction:
 
   0x__ 0xAB
-  ^^   ^^
-  \____||_ opcode
-  |\_ 2nd arg
-  \_  1st arg
+    ^^   ^^
+    \____||_ opcode
+         |\_ 2nd arg
+         \_  1st arg
 
 
   * literal instruction
@@ -47,8 +47,11 @@
 #define DIV 0x0b /* DIV a b: a = a/b */
 #define AND 0x0c /* AND a b: a = a&b */
 #define XOR 0x0d /* XOR a b: a = a^b */
-#define LOD 0x0e /* LOD a b: load library with name pointed by A, save library pointer into B */
-#define EXC 0x0f /* EXC a b: execute function with name pointed by A from library poitner B. gets passed current State */
+#define IOR 0x0e /* IOR a b: a = a|b */
+#define LSH 0x0f /* LSH a b: a = a<<b */
+#define RSH 0x10 /* RSH a b: a = a>>b */
+#define LOD 0x11 /* LOD a b: load library with name pointed by A, save library pointer into B */
+#define EXC 0x12 /* EXC a b: execute function with name pointed by A from library poitner B. gets passed current State */
 
 #define I(s, ...) do { __VA_ARGS__ ; } while (0); (s)->pc += 2; break;
 #define B(O, o) case O: I(s, R1(s) o R2(s))
@@ -78,6 +81,7 @@ main(int argc, char **argv)
   s->pc = s->haltp = 0;
 
   while (!s->haltp) {
+    /* print_state(s); */
     switch (s->data[s->pc]) {
     case LIT: s->reg[s->data[s->pc+1]%NREG] = (s->data[s->pc+2]<<8)|s->data[s->pc+3]; s->pc+=4; break;
     case MOV: I(s, R1(s) = R2(s))
@@ -86,13 +90,16 @@ main(int argc, char **argv)
     case HLT: s->haltp = 1; break;
     case JIZ: s->pc = R2(s) == 0 ? R1(s) : s->pc+2; break;
     case MEM: I(s, R1(s) = s->data[R2(s)])
-    case MME: I(s, s->data[R1(s)] = R2(s))
+    case MME: I(s, s->data[R1(s)] = R2(s)&0xff)
        B(ADD, +=)
        B(SUB, -=)
        B(MUL, *=)
        B(DIV, /=)
        B(AND, &=)
        B(XOR, ^=)
+       B(IOR, |=)
+       B(LSH, <<=)
+       B(RSH, >>=)
     case LOD: I(s, R2(s) = libmax; libs[libmax++] = dlopen((void*)(s->data+R1(s)), RTLD_NOW);
                 if (!libs[R2(s)]) errx(1, "couldn't open %s: %s", (char*)(s->data+R1(s)), dlerror()))
     case EXC: I(s, void (*f)(State*) = dlsym(libs[R2(s)], (void*)s->data+R1(s));

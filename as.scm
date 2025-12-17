@@ -2,9 +2,6 @@
  (owl toplevel)
  (prefix (owl parse) get-))
 
-(define *input-file* "main.S")
-(define *output-file* "main.bin")
-
 (define *instrs*
   (list->ff
    '((lit . #x00)
@@ -21,9 +18,48 @@
      (div . #x0b)
      (and . #x0c)
      (xor . #x0d)
-     (lod . #x0e)
-     (exc . #x0f)
+     (ior . #x0e)
+     (lsh . #x0f)
+     (rsh . #x10)
+     (lod . #x11)
+     (exc . #x12)
      )))
+
+(define-syntax λcurry
+  (syntax-rules (())
+    ((_ (arg1) . body)
+     (λ (arg1) . body))
+    ((_ (arg1 . rest) . body)
+     (λ (arg1) (λcurry rest . body)))))
+
+(define (capply fn arity lst)
+  (cond
+   ((= arity 0) fn)
+   ((= (len lst) arity)
+    (capply (fn (car lst)) (- arity 1) (cdr lst)))
+   (else
+    (syntax-error "bad arity for funcall " (list fn lst)))))
+
+(define static-eval
+  (ff
+   '+     (tuple 2 (λcurry (a b) (+ a b)))
+   '-     (tuple 2 (λcurry (a b) (- a b)))
+   '*     (tuple 2 (λcurry (a b) (* a b)))
+   '/     (tuple 2 (λcurry (a b) (/ a b)))
+   'print (tuple 1 (λcurry (a) (print a)))
+   ))
+
+(define (get-constant env name)
+  (if-lets ((v (get (get env 'constants empty) name #f)))
+    v
+    (error "cannot resolve constant-like value " name)))
+
+(define (try-evaluate fn arg env)
+  (if-lets ((vs (get static-eval fn (tuple #f #f)))
+            (arity f vs)
+            (arg (map (λ (a) (if (symbol? a) (get-constant env a) a)) arg)))
+    (capply f arity arg)
+    (syntax-error "no such static-eval function " fn)))
 
 (define (char-match regex)
   (let ((rex (string->regex (str "m/^" regex "$/"))))
@@ -50,7 +86,7 @@
 
 (define get-symbol
   (get-parses
-   ((c1   (get-byte-if (char-match "[a-zA-Z_!@#$^&*]")))
+   ((c1   (get-byte-if (char-match "[a-zA-Z_!@#$^&*/+]|-")))
     (rest (get-star (get-byte-if (char-match "[a-zA-Z_!@#$^&*0-9]|-")))))
    (string->symbol (list->string (cons c1 rest)))))
 
@@ -78,11 +114,41 @@
    ((bs (get-plus! (get-byte-if (char-match "[0-9]")))))
    (fold (λ (a b) (+ (* a 10) (- b #\0))) 0 bs)))
 
+(define (dirty-compile-lst lst env)
+  (λ (compile) ; ja pierole mocne
+    (fold
+     (λ (acc it)
+       (append
+        acc
+        (if (tuple? it)
+            (compile -42 (list it) env)
+            (list it))))
+     #n
+     lst)))
+
+;; sexp = evaluatable
+(define (get-sexp get-literal)
+  (get-parses
+   ((_    (get-imm #\())
+    (_    maybe-get-whitespace)
+    (fn   (get-either get-symbol (get-literal get-literal)))
+    (args (get-star
+           (get-parses
+            ((_   maybe-get-whitespace)
+             (arg (get-either get-symbol (get-literal get-literal)))
+             (_   maybe-get-whitespace))
+            arg)))
+    (_    (get-imm #\))))
+   (tuple 'evaluatable (λ (compile env) (try-evaluate fn ((dirty-compile-lst args env) compile) env)))))
+
 (define get-literal
-  (get-one-of
-   get-char
-   get-hex
-   get-number))
+  (let ((parser (λ (self)
+                  (get-one-of
+                   (get-sexp self)
+                   get-char
+                   get-hex
+                   get-number))))
+    (parser parser)))
 
 (define get-instruction
   (get-parses
@@ -137,11 +203,22 @@
     (_    (get-imm #\)))
     (_    maybe-get-whitespace)
     (_    (get-imm #\{))
-    (code (get-plus (get-thing get-thing)))
+    (code (get-plus get-thing))
     (_    maybe-get-whitespace)
     (_    (get-imm #\}))
     (_    maybe-get-whitespace))
    (tuple 'defmacro name args code)))
+
+(define get-constant-declaration
+  (get-parses
+   ((_ (get-word "constant" '_))
+    (_ get-whitespace)
+    (name get-symbol)
+    (_ maybe-get-whitespace)
+    (_ (get-imm #\=))
+    (_ maybe-get-whitespace)
+    (val (get-one-of get-byte-list get-literal get-symbol)))
+   (tuple 'defconstant name val)))
 
 (define get-macro-invocation
   (get-parses
@@ -159,7 +236,8 @@
                    ((skip maybe-get-whitespace)
                     (val
                      (get-one-of
-                      (get-macro-declaration self)
+                      (get-macro-declaration (self self))
+                      get-constant-declaration
                       get-macro-invocation
                       get-instruction
                       get-byte-list
@@ -169,15 +247,6 @@
 
 (define parser
   (get-plus! get-thing))
-
-(define data
-  (get-parse
-   parser
-   (str-iter (list->string (file->list *input-file*)))
-   'shit))
-
-(when (eq? data 'shit)
-  (halt 42))
 
 (define (add* point env name value)
   (put env point (put (get env point empty) name value)))
@@ -191,6 +260,9 @@
 (define (add-macro env name macro)
   (add* 'macros env name macro))
 
+(define (add-constant env name value)
+  (add* 'constants env name value))
+
 (define (reg? sym_)
   (let ((sym (str sym_)))
     (and
@@ -202,7 +274,8 @@
 (define (symbol->static-value sym env)
   (cond
    ((reg? sym)    (- (string-ref (str sym) 1) #\a))
-   ((symbol? sym) (if-lets ((v (get (get env 'labels empty) sym #f)))
+   ((symbol? sym) (if-lets ((v (or (get (get env 'labels empty) sym #f)
+                                   (get (get env 'constants empty) sym #f))))
                     v
                     (error "couldn't find symbol " sym)))
    (else
@@ -261,9 +334,6 @@
                `(,(λ (env)
                     (let ((a (symbol->static-value a_ env))
                           (b (symbol->static-value b_ env)))
-                      (when (and (= v 0) (reg? b_))
-                        (print "b (is a reg): " b))
-                      ;; (print "a: " a)
                       (if (and (= v 0) (not (reg? b_)))
                           (list v a (>> (band b #xff00) 8) (band b #xff)) ; lit
                           (list (if (= v 0)
@@ -272,7 +342,12 @@
                                 (bior (<< a 4) (band #xf b)))))))))
              (error "unknown opc " (car lst))))
           ((bytes bs)
-           (loop (+ point (len bs)) env (cdr lst) (append acc bs)))
+           (loop (+ point (len bs)) env (cdr lst)
+                 (append acc `(,(λ (env) ((dirty-compile-lst bs env) compile))))))
+          ((defconstant name value)
+           (loop point (add-constant env name value) (cdr lst) acc))
+          ((evaluatable fn)
+           (loop point env (cdr lst) (append acc (list (fn compile env)))))
           ((defmacro name args body)
            (loop point (add-macro env name (ff 'args args 'body body)) (cdr lst) acc))
           ((macroexpand name args)
@@ -281,8 +356,36 @@
                (loop (+ point (len code)) env (cdr lst) (append acc code)))
              (error "no such macro " (car lst))))
           (else
-           (error "unknown " (car lst)))))))
+           (error "unknown assembler directive " (car lst)))))))
 
-(let ((data (compile 0 (filter tuple? data) empty)))
-  (print "data: " data)
-  (list->file data *output-file*))
+(λ (args)
+  (when (= (len args) 3)
+    (lets ((a (list->tuple (cdr args)))
+           (input-file output-file a))
+      (if-lets ((data (get-try-parse
+                       parser
+                       (str-iter (list->string (file->list input-file)))
+                       input-file
+                       "syntax error"
+                       (λ arg
+                         (print-to stderr "syntax error: " arg)
+                          (halt 42)))))
+        (begin
+          (list->file (compile 0 (filter tuple? data) empty) output-file)
+          (print 'ok)
+          (halt 0))
+        (syntax-error "syntax error so bad i don't know what to say" #f))))
+  (halt 42))
+
+;; (define data
+;;   (get-parse
+;;    parser
+;;    (str-iter (list->string (file->list *input-file*)))
+;;    'shit))
+
+;; (when (eq? data 'shit)
+;;   (halt 42))
+
+;; (let ((data (compile 0 (filter tuple? data) empty)))
+;;   (print "data: " data)
+;;   (list->file data *output-file*))
