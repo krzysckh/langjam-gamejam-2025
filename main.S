@@ -143,6 +143,25 @@ def modulo(reg, mod) {
         mov reg, rh
         }
 
+def ifz(reg, then, else) {
+        ...{                    ; create local scope
+           lit rg, test
+           lit rh, 0
+           jiz rg, rh
+a:         ...then
+           lit rg, fin
+           lit rh, 0
+           jiz rg, rh
+b:         ...else
+           lit rg, fin
+           lit rh, 0
+           jiz rg, rh
+test:      lit rh, a
+           jiz rh, reg
+           jmp(b)
+fin:    }
+}
+
 ;; def xor(a, b) {
 ;;         M(a, b)
 ;;         fcall1(_xor)
@@ -182,6 +201,11 @@ make_color:         ['m 'a 'k 'e '_ 'c 'o 'l 'o 'r 0]
 
 ;;; Functions
 
+
+def flat(code) {
+        ...code
+        }
+
 main:   dlopen(_rl1)
         call3(0, InitWindow, WIDTH, HEIGHT, _Title)
         call1(0, SetTargetFPS, 30)
@@ -210,18 +234,18 @@ mainloop:
         put2(y, rf)
 
         call0(0, GetMouseWheelMove)
-        lit ra, _noad
-        jiz ra, re
-        addn(rc, 5)
-        put2(r, rc)
-_noad:
-        lit ra, _nosub
-        jiz ra, rf
-        subn(rc, 5)
-        put2(r, rc)
-_nosub:
-        call0(0, EndDrawing)
 
+        ifz(re, {}, {
+          addn(rc, 5)
+          put2(r, rc)
+        })
+
+        ifz(rf, {}, {
+          subn(rc, 5)
+          put2(r, rc)
+        })
+
+        call0(0, EndDrawing)
 
         ;; dbg 0, 0
 

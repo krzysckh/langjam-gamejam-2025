@@ -217,6 +217,16 @@
                    (cons s rest)))))
     (parser parser)))
 
+(define (get-code-block get-thing)
+  (get-parses
+   ((_    maybe-get-whitespace)
+    (_    (get-imm #\{))
+    (code (get-either
+           (get-epsilon #n)
+           (get-plus get-thing)))
+    (_    (get-imm #\}))
+    (_    maybe-get-whitespace))
+   code))
 
 (define (get-macro-declaration get-thing)
   (get-parses
@@ -228,15 +238,22 @@
     (_    maybe-get-whitespace)
     (args (get-symbol-list get-symbol))
     (_    (get-imm #\)))
-    (_    maybe-get-whitespace)
-    (_    (get-imm #\{))
-    (code (get-plus get-thing))
-    (_    maybe-get-whitespace)
-    (_    (get-imm #\}))
-    (_    maybe-get-whitespace))
+    (code (get-code-block get-thing)))
    (tuple 'defmacro name args code)))
 
-(define get-constant-declaration
+(define (get-macro-invocation get-thing)
+  (get-parses
+   ((name get-symbol)
+    (_    maybe-get-whitespace)
+    (_    (get-imm #\())
+    (args (get-either
+           (get-symbol-list (get-one-of get-symbol get-literal get-byte-list (get-code-block get-thing)))
+           (get-epsilon #n)))
+    (_    (get-imm #\)))
+    (_    maybe-get-whitespace))
+   (tuple 'macroexpand name args)))
+
+(define (get-constant-declaration get-thing)
   (get-parses
    ((_ (get-word "constant" '_))
     (_ get-whitespace)
@@ -244,18 +261,16 @@
     (_ maybe-get-whitespace)
     (_ (get-imm #\=))
     (_ maybe-get-whitespace)
-    (val (get-one-of get-byte-list get-literal get-symbol)))
+    (val (get-one-of get-byte-list (get-macro-invocation get-thing) get-literal get-symbol)))
    (tuple 'defconstant name val)))
 
-(define get-macro-invocation
+(define (get-unwrap get-thing)
   (get-parses
-   ((name get-symbol)
-    (_    maybe-get-whitespace)
-    (_    (get-imm #\())
-    (args (get-symbol-list (get-either get-symbol get-literal)))
-    (_    (get-imm #\)))
-    (_    maybe-get-whitespace))
-   (tuple 'macroexpand name args)))
+   ((_   maybe-get-whitespace)
+    (_   (get-word "..." '...))
+    (sym (get-either get-symbol (get-code-block get-thing)))
+    (_   maybe-get-whitespace))
+   (tuple 'unwrap sym)))
 
 (define get-thing
   (let ((parser (λ (self)
@@ -264,10 +279,12 @@
                     (val
                      (get-one-of
                       (get-macro-declaration (self self))
-                      get-constant-declaration
-                      get-macro-invocation
+                      (get-code-block (self self))
+                      (get-constant-declaration (self self))
+                      (get-macro-invocation (self self))
                       get-instruction
                       get-byte-list
+                      (get-unwrap (self self))
                       get-label)))
                    val))))
     (parser parser)))
@@ -302,15 +319,23 @@
 (define (walk-replace body sym to)
   (cond
    ((null? body) #n)
+   ((tuple? body)
+    (list->tuple
+     (cons
+      (ref body 1)
+      (walk-replace (cdr (tuple->list body)) sym to))))
    ((pair? body)
     (cons (walk-replace (car body) sym to)
           (walk-replace (cdr body) sym to)))
    (else
+    (print "eq? " body " " sym)
     (if (eq? body sym) to body))))
 
 (define (replace-symbols body s1 s2)
   (when (not (= (len s1) (len s2)))
     (error "bad macro invocation" (list "wanted" s1 "got" s2)))
+  (print "s1: " s1)
+  (print "s2: " s2)
   (let ((f (λ (body a b)
              (let loop ((body body))
                (if (null? body)
@@ -326,48 +351,82 @@
              (env env)
              (lst lst)
              (acc #n))
-    (if (null? lst)
-        (resolve acc env)
-        (tuple-case (car lst)
-          ((label name)
-           (loop point (add-label env name point) (cdr lst) acc))
-          ((instruction instr a_ b_)
-           (if-lets ((v (get *instrs* instr #f))
-                     (isiz (if (= v 0) 4 2)))
-             (loop
-              (+ point isiz)
-              env
-              (cdr lst)
-              (append
-               acc
-               `(,(λ (env)
-                    (let ((a (symbol->static-value a_ env))
-                          (b (symbol->static-value b_ env)))
-                      (if (and (= v 0) (not (reg? b_)))
-                          (list v a (>> (band b #xff00) 8) (band b #xff)) ; lit
-                          (list (if (= v 0)
-                                    1
-                                    v)
-                                (bior (<< a 4) (band #xf b)))))))))
-             (error "unknown opc " (car lst))))
-          ((bytes bs)
-           (loop (+ point (len bs)) env (cdr lst)
-                 (append acc `(,(λ (env) (dirty-compile-lst bs env))))))
-          ((defconstant name value)
-           (loop point (add-constant env name value) (cdr lst) acc))
-          ((evaluatable fn)
-           (loop point env (cdr lst) (append acc (list (fn compile env)))))
-          ((defmacro name args body)
-           (loop point (add-macro env name (ff 'args args 'body body)) (cdr lst) acc))
-          ((macroexpand name args)
-           (if-lets ((macro (get (get env 'macros empty) name #f)))
-             (let ((code (compile point (replace-symbols (get macro 'body #n) (get macro 'args #n) args) env)))
-               (loop (+ point (len code)) env (cdr lst) (append acc code)))
-             (error "no such macro " (car lst))))
-          (else
-           (error "unknown assembler directive " (car lst)))))))
+    (print "car: " (car* lst))
+    (cond
+     ((null? lst)
+      (resolve acc env))
+     ((pair? (car lst))
+      (let ((code (compile point (car lst) env)))
+        (loop (+ point (len code)) env (cdr lst) (append acc code))))
+     (else
+      (tuple-case (car lst)
+        ((label name)
+         (loop point (add-label env name point) (cdr lst) acc))
+        ((instruction instr a_ b_)
+         (if-lets ((v (get *instrs* instr #f))
+                   (isiz (if (= v 0) 4 2)))
+           (loop
+            (+ point isiz)
+            env
+            (cdr lst)
+            (append
+             acc
+             `(,(λ (env)
+                  (let ((a (symbol->static-value a_ env))
+                        (b (symbol->static-value b_ env)))
+                    (if (and (= v 0) (not (reg? b_)))
+                        (list v a (>> (band b #xff00) 8) (band b #xff)) ; lit
+                        (list (if (= v 0)
+                                  1
+                                  v)
+                              (bior (<< a 4) (band #xf b)))))))))
+           (error "unknown opc " (car lst))))
+        ((bytes bs)
+         (loop (+ point (len bs)) env (cdr lst)
+               (append acc `(,(λ (env) (dirty-compile-lst bs env))))))
+        ((defconstant name value)
+         (loop point (add-constant env name value) (cdr lst) acc))
+        ((evaluatable fn)
+         (loop point env (cdr lst) (append acc (list (fn compile env)))))
+        ((defmacro name args body)
+         (loop point (add-macro env name (ff 'args args 'body body)) (cdr lst) acc))
+        ((macroexpand name args)
+         (if-lets ((macro (get (get env 'macros empty) name #f)))
+           (let ((code
+                  (if (function? (get macro 'body #f))
+                      (compile point (capply (get macro 'body 'bug) (len (get macro 'args #n)) args) env)
+                      (compile point (replace-symbols (get macro 'body #n) (get macro 'args #n) args) env))))
+             (loop (+ point (len code)) env (cdr lst) (append acc code)))
+           (error "no such macro " (car lst))))
+        ((unwrap lst*)
+         (let ((code (compile point (symbol->static-value lst* env) env)))
+           (loop (+ point (len code)) env (cdr lst) (append acc code))))
+        (else
+         (error "unknown assembler directive " (car lst))))))))
+
+(define (start-gensym)
+  (thread 'gensym (let loop ((n 1))
+                    (lets ((who _ (next-mail)))
+                      (mail who (string->symbol (str "g" n)))
+                      (loop (+ n 1))))))
+
+(define (gensym)
+  (interact 'gensym '_))
+
+(define default-env
+  (pipe empty
+    (put 'compile compile)
+    (add-macro 'gensym (ff 'args '(reg)
+                           'body (λcurry (reg)
+                                   (let ((g (gensym)))
+                                     `(,(tuple 'instruction 'lit reg g)
+                                       ,(tuple 'label g))))))
+    ))
+
+
 
 (λ (args)
+  (start-gensym)
   (when (= (len args) 3)
     (lets ((a (list->tuple (cdr args)))
            (input-file output-file a))
@@ -380,7 +439,8 @@
                          (print-to stderr "syntax error: " arg)
                          (halt 42)))))
         (begin
-          (list->file (compile 0 (filter tuple? data) (put empty 'compile compile)) output-file)
+          (for-each print data)
+          (list->file (compile 0 (filter tuple? data) default-env) output-file)
           (print 'ok)
           (halt 0))
         (syntax-error "syntax error so bad i don't know what to say" #f))))

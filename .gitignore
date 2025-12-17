@@ -8,3 +8,4 @@ vm
 lib1.c
 rand.S
 temp.*
+test.S

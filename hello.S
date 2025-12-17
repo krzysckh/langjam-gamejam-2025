@@ -16,7 +16,7 @@ _start: lit ra, main
 hello:  ['H 'e 'l 'l 'o ', ' 'W 'o 'r 'l 'd '! 10 0 ]
 
 main:   lit ra, hello
-loop:   lit rd, loop
+        gensym(rd)
         mem rb, ra
         lit rc, quit
         jiz rc, rb
