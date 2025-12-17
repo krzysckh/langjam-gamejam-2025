@@ -8,8 +8,8 @@
 ;;; rg - temporary, for macros
 ;;; rh - temporary, for macros
 
-constant WIDTH  = 400
-constant HEIGHT = 300
+constant WIDTH  = 1200
+constant HEIGHT = 500
 
 ;;; Prelude, has to be defined at 0x0, call main:
 _start: lit ra, main
@@ -21,6 +21,7 @@ _start: lit ra, main
 bg:     [0 0]
 fg:     [0 0]
 vy:     [0 0]
+r:      [0 15]
 y:      [0 (/ HEIGHT 2)]
 x:      [0 (/ WIDTH 2)]
 
@@ -68,6 +69,11 @@ def jmp(x) {
 def addn(reg, n) {
         lit rh, n
         add reg, rh
+        }
+
+def subn(reg, n) {
+        lit rh, n
+        sub reg, rh
         }
 
 def dlopen(lib) {
@@ -170,6 +176,7 @@ ClearBackground:    ['W 'C 'l 'e 'a 'r 'B 'a 'c 'k 'g 'r 'o 'u 'n 'd 0]
 DrawCircle:         ['W 'D 'r 'a 'w 'C 'i 'r 'c 'l 'e 0]
 SetWindowSize:      ['W 'S 'e 't 'W 'i 'n 'd 'o 'w 'S 'i 'z 'e 0]
 GetMousePosition:   ['W 'G 'e 't 'M 'o 'u 's 'e 'P 'o 's 'i 't 'i 'o 'n 0]
+GetMouseWheelMove:  ['W 'G 'e 't 'M 'o 'u 's 'e 'W 'h 'e 'e 'l 'M 'o 'v 'e 0]
 
 make_color:         ['m 'a 'k 'e '_ 'c 'o 'l 'o 'r 0]
 
@@ -192,7 +199,8 @@ mainloop:
         get(fg, rd)
         get2(x, ra)
         get2(y, rb)
-        call4(0, DrawCircle, ra, rb, 30, rd)
+        get2(r, rc)
+        call4(0, DrawCircle, ra, rb, rc, rd)
 
         call0(0, GetMousePosition)
 
@@ -201,7 +209,21 @@ mainloop:
         put2(x, re)
         put2(y, rf)
 
+        call0(0, GetMouseWheelMove)
+        lit ra, _noad
+        jiz ra, re
+        addn(rc, 5)
+        put2(r, rc)
+_noad:
+        lit ra, _nosub
+        jiz ra, rf
+        subn(rc, 5)
+        put2(r, rc)
+_nosub:
         call0(0, EndDrawing)
+
+
+        ;; dbg 0, 0
 
         call0(0, WindowShouldClose)
         lit rb, mainloop

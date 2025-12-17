@@ -17,6 +17,16 @@ WWindowShouldClose(State *s)
 }
 
 void
+WGetMouseWheelMove(State *s)
+{
+  float f = GetMouseWheelMove();
+  RE(s) = RF(s) = 0;
+
+  if (f < 0.f) RF(s) = 1;
+  if (f > 0.f) RE(s) = 1;
+}
+
+void
 WGetMousePosition(State *s)
 {
   RE(s) = GetMouseX();
@@ -35,6 +45,5 @@ VDO(DrawCircle, RA(s), RB(s), RC(s), colors[RD(s)])
 VDO(SetWindowSize, RA(s), RB(s))
 VDO(InitWindow, RA(s), RB(s), SOF(s, RC));
 VDO(SetTargetFPS, RA(s))
-
 VOID(BeginDrawing);
 VOID(EndDrawing);

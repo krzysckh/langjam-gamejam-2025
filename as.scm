@@ -23,6 +23,7 @@
      (rsh . #x10)
      (lod . #x11)
      (exc . #x12)
+     (dbg . #xff)
      )))
 
 (define-syntax λcurry
@@ -49,9 +50,35 @@
    'print (tuple 1 (λcurry (a) (print a)))
    ))
 
+(define (reg? sym_)
+  (let ((sym (str sym_)))
+    (and
+     (=  (string-length sym) 2)
+     (=  (string-ref sym 0) #\r)
+     (>= (string-ref sym 1) #\a)
+     (<= (string-ref sym 1) (+ #\a 8)))))
+
+(define (unfuck c val)
+  (if (tuple? val)
+      (c val)
+      val))
+
+(define (symbol->static-value sym env)
+  (unfuck
+   (λ (v) (symbol->static-value v env))
+   (cond
+    ((reg? sym)    (- (string-ref (str sym) 1) #\a))
+    ((symbol? sym) (if-lets ((v (or (get (get env 'labels empty) sym #f)
+                                    (get (get env 'constants empty) sym #f))))
+                     v
+                     (error "couldn't find symbol " sym)))
+    ((tuple? sym) (car ((get env 'compile 'bug) -42 (list sym) env)))
+    (else
+     sym))))
+
 (define (get-constant env name)
   (if-lets ((v (get (get env 'constants empty) name #f)))
-    v
+    (symbol->static-value v env)
     (error "cannot resolve constant-like value " name)))
 
 (define (try-evaluate fn arg env)
@@ -115,7 +142,7 @@
    (fold (λ (a b) (+ (* a 10) (- b #\0))) 0 bs)))
 
 (define (dirty-compile-lst lst env)
-  (λ (compile) ; ja pierole mocne
+  (let ((compile (get env 'compile 'bug)))
     (fold
      (λ (acc it)
        (append
@@ -139,7 +166,7 @@
              (_   maybe-get-whitespace))
             arg)))
     (_    (get-imm #\))))
-   (tuple 'evaluatable (λ (compile env) (try-evaluate fn ((dirty-compile-lst args env) compile) env)))))
+   (tuple 'evaluatable (λ (compile env) (try-evaluate fn (dirty-compile-lst args env) env)))))
 
 (define get-literal
   (let ((parser (λ (self)
@@ -263,24 +290,6 @@
 (define (add-constant env name value)
   (add* 'constants env name value))
 
-(define (reg? sym_)
-  (let ((sym (str sym_)))
-    (and
-     (=  (string-length sym) 2)
-     (=  (string-ref sym 0) #\r)
-     (>= (string-ref sym 1) #\a)
-     (<= (string-ref sym 1) (+ #\a 8)))))
-
-(define (symbol->static-value sym env)
-  (cond
-   ((reg? sym)    (- (string-ref (str sym) 1) #\a))
-   ((symbol? sym) (if-lets ((v (or (get (get env 'labels empty) sym #f)
-                                   (get (get env 'constants empty) sym #f))))
-                    v
-                    (error "couldn't find symbol " sym)))
-   (else
-    sym)))
-
 (define (resolve lst env)
   (let loop ((lst lst))
     (if (null? lst)
@@ -343,7 +352,7 @@
              (error "unknown opc " (car lst))))
           ((bytes bs)
            (loop (+ point (len bs)) env (cdr lst)
-                 (append acc `(,(λ (env) ((dirty-compile-lst bs env) compile))))))
+                 (append acc `(,(λ (env) (dirty-compile-lst bs env))))))
           ((defconstant name value)
            (loop point (add-constant env name value) (cdr lst) acc))
           ((evaluatable fn)
@@ -369,23 +378,10 @@
                        "syntax error"
                        (λ arg
                          (print-to stderr "syntax error: " arg)
-                          (halt 42)))))
+                         (halt 42)))))
         (begin
-          (list->file (compile 0 (filter tuple? data) empty) output-file)
+          (list->file (compile 0 (filter tuple? data) (put empty 'compile compile)) output-file)
           (print 'ok)
           (halt 0))
         (syntax-error "syntax error so bad i don't know what to say" #f))))
   (halt 42))
-
-;; (define data
-;;   (get-parse
-;;    parser
-;;    (str-iter (list->string (file->list *input-file*)))
-;;    'shit))
-
-;; (when (eq? data 'shit)
-;;   (halt 42))
-
-;; (let ((data (compile 0 (filter tuple? data) empty)))
-;;   (print "data: " data)
-;;   (list->file data *output-file*))

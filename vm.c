@@ -52,6 +52,7 @@
 #define RSH 0x10 /* RSH a b: a = a>>b */
 #define LOD 0x11 /* LOD a b: load library with name pointed by A, save library pointer into B */
 #define EXC 0x12 /* EXC a b: execute function with name pointed by A from library poitner B. gets passed current State */
+#define DBG 0xff /* DBG a b: print current state */
 
 #define I(s, ...) do { __VA_ARGS__ ; } while (0); (s)->pc += 2; break;
 #define B(O, o) case O: I(s, R1(s) o R2(s))
@@ -104,6 +105,7 @@ main(int argc, char **argv)
                 if (!libs[R2(s)]) errx(1, "couldn't open %s: %s", (char*)(s->data+R1(s)), dlerror()))
     case EXC: I(s, void (*f)(State*) = dlsym(libs[R2(s)], (void*)s->data+R1(s));
                 if (f) f(s); else errx(1, "undefined in %d: %s", R2(s), (char*)(void*)s->data+R1(s)))
+    case DBG: I(s, print_state(s))
     default:
       errx(1, "unknown opcode %d", s->data[s->pc]);
     }
