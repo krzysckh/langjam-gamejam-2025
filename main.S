@@ -1,3 +1,5 @@
+;;; Commentary:
+
 ;;; Calling convention:
 ;;; ra - working, arg1
 ;;; rb - working, arg2
@@ -8,9 +10,12 @@
 ;;; rg - temporary, for macros
 ;;; rh - temporary, for macros
 
+;;; Code:
+
 constant WIDTH  = 1200
 constant HEIGHT = 500
 
+;;; Prelude, has to be defined at 0x0, call main:
 def put2(var, v) {
         lit rg, 8
         lit rh, v
@@ -23,7 +28,6 @@ def put2(var, v) {
         mme rg, rh
         }
 
-;;; Prelude, has to be defined at 0x0, call main:
 _start: lit rf, stack           ; prepare stack
         put2(stackpt, rf)
         lit ra, main            ; call main
@@ -205,6 +209,19 @@ def pop(reg) {
         put2(stackpt, rf)
         }
 
+def call(ptr) {
+        ...{
+          push(lmao)
+          jmp(ptr)
+lmao:   }
+        }
+
+def ret() {
+        pop(re)
+        lit rh, 0
+        jiz re, rh
+        }
+
 ;;; Data declarations:
 
 _Title:             ['H 'e 'l 'l 'o '! 0]
@@ -224,6 +241,8 @@ make_color:         ['m 'a 'k 'e '_ 'c 'o 'l 'o 'r 0]
 
 ;;; Functions
 
+fn:     dbg 0, 0
+        ret()
 
 main:   dlopen(_rl1)
         call3(0, InitWindow, WIDTH, HEIGHT, _Title)

@@ -112,6 +112,11 @@
 (define maybe-get-whitespace
   (get-star! get-single-whitespace))
 
+(define (maybe-get-whitespace* ret)
+  (get-parses
+   ((_ maybe-get-whitespace))
+   ret))
+
 (define get-whitespace
   (get-plus! get-single-whitespace))
 
@@ -241,7 +246,7 @@
     (_    maybe-get-whitespace)
     (_    (get-imm #\())
     (_    maybe-get-whitespace)
-    (args (get-symbol-list get-symbol))
+    (args (get-either (get-symbol-list get-symbol) (maybe-get-whitespace* #n)))
     (_    (get-imm #\)))
     (code (get-code-block get-thing)))
    (tuple 'defmacro name args code)))
@@ -442,7 +447,6 @@
                          (print-to stderr "syntax error: " arg)
                          (halt 42)))))
         (begin
-          (for-each print data)
           (lets ((data _ (compile 0 (filter tuple? data) default-env)))
             (list->file data output-file))
           (print 'ok)
