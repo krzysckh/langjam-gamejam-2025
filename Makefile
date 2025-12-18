@@ -8,4 +8,4 @@ all: rl.so vm main.bin
 .c.so:
 	$(CC) $(CFLAGS) -o $@ -shared $< -lraylib -lm
 clean:
-	rm -f vm rl.so
+	rm -f vm rl.so main.bin

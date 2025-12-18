@@ -63,28 +63,32 @@
       (c val)
       val))
 
-(define (symbol->static-value sym env)
+(define (symbol->static-value sym env fatal?)
   (unfuck
-   (λ (v) (symbol->static-value v env))
+   (λ (v) (symbol->static-value v env fatal?))
    (cond
     ((reg? sym)    (- (string-ref (str sym) 1) #\a))
     ((symbol? sym) (if-lets ((v (or (get (get env 'labels empty) sym #f)
                                     (get (get env 'constants empty) sym #f))))
                      v
-                     (error "couldn't find symbol " sym)))
-    ((tuple? sym) (car ((get env 'compile 'bug) -42 (list sym) env)))
+                     (if fatal?
+                         (error "couldn't find symbol " sym)
+                         #f)))
+    ((tuple? sym)
+     (lets ((v _ ((get env 'compile 'bug) -42 (list sym) env)))
+       (car v)))
     (else
      sym))))
 
-(define (get-constant env name)
+(define (get-constant env name fatal?)
   (if-lets ((v (get (get env 'constants empty) name #f)))
-    (symbol->static-value v env)
+    (symbol->static-value v env fatal?)
     (error "cannot resolve constant-like value " name)))
 
 (define (try-evaluate fn arg env)
   (if-lets ((vs (get static-eval fn (tuple #f #f)))
             (arity f vs)
-            (arg (map (λ (a) (if (symbol? a) (get-constant env a) a)) arg)))
+            (arg (map (λ (a) (if (symbol? a) (get-constant env a #t) a)) arg)))
     (capply f arity arg)
     (syntax-error "no such static-eval function " fn)))
 
@@ -148,7 +152,8 @@
        (append
         acc
         (if (tuple? it)
-            (compile -42 (list it) env)
+            (lets ((v _ (compile -42 (list it) env)))
+              v)
             (list it))))
      #n
      lst)))
@@ -166,7 +171,7 @@
              (_   maybe-get-whitespace))
             arg)))
     (_    (get-imm #\))))
-   (tuple 'evaluatable (λ (compile env) (try-evaluate fn (dirty-compile-lst args env) env)))))
+   (tuple 'evaluatable (λ (env) (try-evaluate fn (dirty-compile-lst args env) env)))))
 
 (define get-literal
   (let ((parser (λ (self)
@@ -328,14 +333,11 @@
     (cons (walk-replace (car body) sym to)
           (walk-replace (cdr body) sym to)))
    (else
-    (print "eq? " body " " sym)
     (if (eq? body sym) to body))))
 
 (define (replace-symbols body s1 s2)
   (when (not (= (len s1) (len s2)))
     (error "bad macro invocation" (list "wanted" s1 "got" s2)))
-  (print "s1: " s1)
-  (print "s2: " s2)
   (let ((f (λ (body a b)
              (let loop ((body body))
                (if (null? body)
@@ -346,40 +348,40 @@
                       (loop (cdr body)))))))))
     (fold (λ (a b) (f a (car b) (cdr b))) body (zip cons s1 s2))))
 
+(define (unfatal env)
+  (put env 'fatal? #f))
+
 (define (compile point lst env)
   (let loop ((point point)
              (env env)
              (lst lst)
              (acc #n))
-    (print "car: " (car* lst))
     (cond
      ((null? lst)
-      (resolve acc env))
+      (values (resolve acc env) point))
      ((pair? (car lst))
-      (let ((code (compile point (car lst) env)))
-        (loop (+ point (len code)) env (cdr lst) (append acc code))))
+      (lets ((code point* (compile point (car lst) (unfatal env))))
+        (loop point* env (cdr lst) (append acc code))))
      (else
       (tuple-case (car lst)
         ((label name)
          (loop point (add-label env name point) (cdr lst) acc))
         ((instruction instr a_ b_)
          (if-lets ((v (get *instrs* instr #f))
-                   (isiz (if (= v 0) 4 2)))
-           (loop
-            (+ point isiz)
-            env
-            (cdr lst)
-            (append
-             acc
-             `(,(λ (env)
-                  (let ((a (symbol->static-value a_ env))
-                        (b (symbol->static-value b_ env)))
-                    (if (and (= v 0) (not (reg? b_)))
-                        (list v a (>> (band b #xff00) 8) (band b #xff)) ; lit
-                        (list (if (= v 0)
-                                  1
-                                  v)
-                              (bior (<< a 4) (band #xf b)))))))))
+                   (isiz (if (and (= v 0) (not (reg? b_))) 4 2)))
+           (letrec ((f (λ (env)
+                         (lets ((fatal? (get env 'fatal? #f))
+                                (a (symbol->static-value a_ env fatal?))
+                                (b (symbol->static-value b_ env fatal?)))
+                           (if (and a b)
+                               (if (and (= v 0) (not (reg? b_)))
+                                   (list v a (>> (band b #xff00) 8) (band b #xff)) ; lit
+                                   (list (if (= v 0)
+                                             1
+                                             v)
+                                         (bior (<< a 4) (band #xf b))))
+                               (list f))))))
+             (loop (+ point isiz) env (cdr lst) (append acc (list f))))
            (error "unknown opc " (car lst))))
         ((bytes bs)
          (loop (+ point (len bs)) env (cdr lst)
@@ -387,20 +389,20 @@
         ((defconstant name value)
          (loop point (add-constant env name value) (cdr lst) acc))
         ((evaluatable fn)
-         (loop point env (cdr lst) (append acc (list (fn compile env)))))
+         (loop point env (cdr lst) (append acc (list (fn env)))))
         ((defmacro name args body)
          (loop point (add-macro env name (ff 'args args 'body body)) (cdr lst) acc))
         ((macroexpand name args)
          (if-lets ((macro (get (get env 'macros empty) name #f)))
-           (let ((code
+           (lets ((code point*
                   (if (function? (get macro 'body #f))
-                      (compile point (capply (get macro 'body 'bug) (len (get macro 'args #n)) args) env)
-                      (compile point (replace-symbols (get macro 'body #n) (get macro 'args #n) args) env))))
-             (loop (+ point (len code)) env (cdr lst) (append acc code)))
+                      (compile point (capply (get macro 'body 'bug) (len (get macro 'args #n)) args) (unfatal env))
+                      (compile point (replace-symbols (get macro 'body #n) (get macro 'args #n) args) (unfatal env)))))
+             (loop point* env (cdr lst) (append acc code)))
            (error "no such macro " (car lst))))
         ((unwrap lst*)
-         (let ((code (compile point (symbol->static-value lst* env) env)))
-           (loop (+ point (len code)) env (cdr lst) (append acc code))))
+         (lets ((code point* (compile point (symbol->static-value lst* env (get env 'fatal? #f)) (unfatal env))))
+           (loop point* env (cdr lst) (append acc code))))
         (else
          (error "unknown assembler directive " (car lst))))))))
 
@@ -421,6 +423,7 @@
                                    (let ((g (gensym)))
                                      `(,(tuple 'instruction 'lit reg g)
                                        ,(tuple 'label g))))))
+    (put 'fatal? #t)
     ))
 
 
@@ -440,7 +443,8 @@
                          (halt 42)))))
         (begin
           (for-each print data)
-          (list->file (compile 0 (filter tuple? data) default-env) output-file)
+          (lets ((data _ (compile 0 (filter tuple? data) default-env)))
+            (list->file data output-file))
           (print 'ok)
           (halt 0))
         (syntax-error "syntax error so bad i don't know what to say" #f))))

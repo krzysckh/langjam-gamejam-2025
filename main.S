@@ -11,8 +11,22 @@
 constant WIDTH  = 1200
 constant HEIGHT = 500
 
+def put2(var, v) {
+        lit rg, 8
+        lit rh, v
+        rsh rh, rg
+        lit rg, var
+        mme rg, rh
+        lit rh, 1
+        add rg, rh
+        lit rh, v
+        mme rg, rh
+        }
+
 ;;; Prelude, has to be defined at 0x0, call main:
-_start: lit ra, main
+_start: lit rf, stack           ; prepare stack
+        put2(stackpt, rf)
+        lit ra, main            ; call main
         lit rb, 0
         jiz ra, rb
 
@@ -32,15 +46,15 @@ def put(var, v) {
         mme rg, rh
         }
 
-def put2(var, v) {
+def rput2(var, reg) {
         lit rg, 8
-        lit rh, v
+        mov rh, reg
         rsh rh, rg
         lit rg, var
         mme rg, rh
         lit rh, 1
         add rg, rh
-        lit rh, v
+        mov rh, reg
         mme rg, rh
         }
 
@@ -158,29 +172,38 @@ b:         ...else
            jiz rg, rh
 test:      lit rh, a
            jiz rh, reg
-           jmp(b)
+           lit rg, b
+           lit rh, 0
+           jiz rg, rh
+           ;; jmp(b)
 fin:    }
 }
 
-;; def xor(a, b) {
-;;         M(a, b)
-;;         fcall1(_xor)
-;;         }
+def push(x) {
+        get2(stackpt, rf)       ; rf = stackpt
+        lit rg, x               ; rg = x
+        addn(rf, 1)             ; stackpt++
+        mme rf, rg              ; stackpt = x&0xff
+        subn(rf, 1)             ; stackpt--
+        lit rh, 8               ; rh = 8
+        rsh rg, rh              ; rg >>= 8
+        mme rf, rg              ; stackpt = rg
+        addn(rf, 2)             ; stackpt += 2
+        put2(stackpt, rf)       ; stackpt <- stackpt
+        }
 
-;; def ior(a, b) {
-;;         M(a, b)
-;;         fcall1(_ior)
-;;         }
-
-;; def lsh(a, b) {
-;;         M(a, b)
-;;         fcall1(_lsh)
-;;         }
-
-;; def rsh(a, b) {
-;;         M(a, b)
-;;         fcall1(_rsh)
-;;         }
+def pop(reg) {
+        get2(stackpt, rf)
+        mem reg, rf
+        subn(rf, 1)
+        mem rg, rf
+        subn(rf, 1)
+        mem reg, rf
+        lit rh, 8
+        lsh reg, rh
+        ior reg, rg
+        put2(stackpt, rf)
+        }
 
 ;;; Data declarations:
 
@@ -201,10 +224,6 @@ make_color:         ['m 'a 'k 'e '_ 'c 'o 'l 'o 'r 0]
 
 ;;; Functions
 
-
-def flat(code) {
-        ...code
-        }
 
 main:   dlopen(_rl1)
         call3(0, InitWindow, WIDTH, HEIGHT, _Title)
@@ -254,3 +273,6 @@ mainloop:
         jiz rb, re
 finish:
         hlt 0, 0
+
+stackpt: [0 0]
+stack:

@@ -61,7 +61,7 @@ void
 print_state(State *s)
 {
   int i;
-  printf("Registers: ");
+  printf("[%d] Registers: ", s->pc);
   for (i = 0; i < NREG; ++i)
     printf("r%c=%d, ", 'a'+i, s->reg[i]); /*  */
   putchar('\n');
