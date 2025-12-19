@@ -21,8 +21,9 @@
      (ior . #x0e)
      (lsh . #x0f)
      (rsh . #x10)
-     (lod . #x11)
-     (exc . #x12)
+     (lss . #x11)
+     (lod . #x12)
+     (exc . #x13)
      (dbg . #xff)
      )))
 

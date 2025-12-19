@@ -6,7 +6,7 @@
 ;;; rc - working, arg3
 ;;; rd - working, arg4
 ;;; re - return
-;;; rf
+;;; rf - return / ??
 ;;; rg - temporary, for macros
 ;;; rh - temporary, for macros
 
@@ -28,7 +28,8 @@ def put2(var, v) {
         mme rg, rh
         }
 
-_start: lit rf, stack           ; prepare stack
+_start:
+        lit rf, stack           ; prepare stack
         put2(stackpt, rf)
         lit ra, main            ; call main
         lit rb, 0
@@ -124,32 +125,32 @@ def M4(a, b, c, d) {
         lit rd, d
         }
 
-def call1(lib, f, a) {
+def ecall1(lib, f, a) {
         M1(a)
         fcall(lib, f)
         }
 
-def call2(lib, f, a, b) {
+def ecall2(lib, f, a, b) {
         M2(a, b)
         fcall(lib, f)
         }
 
-def call3(lib, f, a, b, c) {
+def ecall3(lib, f, a, b, c) {
         M3(a, b, c)
         fcall(lib, f)
         }
 
-def call4(lib, f, a, b, c, d) {
+def ecall4(lib, f, a, b, c, d) {
         M4(a, b, c, d)
         fcall(lib, f)
         }
 
-def call0(lib, f) {
+def ecall0(lib, f) {
         fcall(lib, f)
         }
 
 def make-color(r, g, b, a) {
-        call4(0, make_color, r, g, b, a)
+        ecall4(0, make_color, r, g, b, a)
         }
 
 def modulo(reg, mod) {
@@ -183,6 +184,11 @@ test:      lit rh, a
 fin:    }
 }
 
+def ifl(a, b, then, else) {
+        lss b, a
+        ifz(b, {...then}, {...else})
+        }
+
 def push(x) {
         get2(stackpt, rf)       ; rf = stackpt
         lit rg, x               ; rg = x
@@ -196,7 +202,30 @@ def push(x) {
         put2(stackpt, rf)       ; stackpt <- stackpt
         }
 
+;; def push(x) {
+;;         lit rh, x
+;;         lit rg, 8
+;;         rsh rh, rg
+;;         get2(stackpt, rg)
+;;         mme rg, rh
+;;         lit rh, x
+;;         addn(rg, 1)
+;;         mme rg, rh
+;;         addn(rg, 1)
+;;         put2(stackpt, rg)
+;;         dbg 1,1
+;;         }
+
+;;; i hate myself
 def pop(reg) {
+        ...{
+        lit rh, lol
+        lit rg, 0
+        jiz rh, rg
+_F1:    [0]
+_F2:    [0]
+lol:
+        put2(_F1, rf)
         get2(stackpt, rf)
         mem reg, rf
         subn(rf, 1)
@@ -207,26 +236,67 @@ def pop(reg) {
         lsh reg, rh
         ior reg, rg
         put2(stackpt, rf)
+        get2(_F1, rf)
+        }
         }
 
 def call(ptr) {
         ...{
           push(lmao)
+          push(ra)
+          push(rb)
+          push(rc)
+          push(rd)
           jmp(ptr)
 lmao:   }
         }
 
+
+
+def get2(var, reg) {
+        lit rg, var
+        mem reg, rg
+        lit rh, 8
+        lsh reg, rh
+        lit rh, 1
+        add rg, rh
+        mem rh, rg
+        ior reg, rh
+        }
+
 def ret() {
-        pop(re)
+        ...{
+        pop(rd)
+        pop(rc)
+        pop(rb)
+        pop(ra)
+        lit rh, lol
+        lit rg, 0
+        jiz rh, rg
+_A1:    [0]
+_A2:    [0]
+lol:
+        put2(_A1, ra)
+        pop(ra)
+        mov rg, ra
+        lit ra, 0
+        lit rh, _A1
+        mem ra, rh
+        lit rh, 8
+        lsh ra, 8
+        lit rh, _A2
+        mem rh, rh
+        ior ra, rh
         lit rh, 0
-        jiz re, rh
+        jiz rg, rh
+        }
         }
 
 ;;; Data declarations:
 
 _Title:             ['H 'e 'l 'l 'o '! 0]
 _rl1:               ['r 'l '. 's 'o 0]
-InitWindow:         ['W 'I 'n 'i 't 'W 'i 'n 'd 'o 'w 0]
+InitWindow:         ['W 'I 'n 'i 't 'W 'i 'n 'd 'o 'w 0] ;
 SetTargetFPS:       ['W 'S 'e 't 'T 'a 'r 'g 'e 't 'F 'P 'S 0]
 WindowShouldClose:  ['W 'W 'i 'n 'd 'o 'w 'S 'h 'o 'u 'l 'd 'C 'l 'o 's 'e 0]
 BeginDrawing:       ['W 'B 'e 'g 'i 'n 'D 'r 'a 'w 'i 'n 'g 0]
@@ -236,60 +306,85 @@ DrawCircle:         ['W 'D 'r 'a 'w 'C 'i 'r 'c 'l 'e 0]
 SetWindowSize:      ['W 'S 'e 't 'W 'i 'n 'd 'o 'w 'S 'i 'z 'e 0]
 GetMousePosition:   ['W 'G 'e 't 'M 'o 'u 's 'e 'P 'o 's 'i 't 'i 'o 'n 0]
 GetMouseWheelMove:  ['W 'G 'e 't 'M 'o 'u 's 'e 'W 'h 'e 'e 'l 'M 'o 'v 'e 0]
+Vec2MoveTowards:    ['W 'V 'e 'c 't 'o 'r '2 'M 'o 'v 'e 'T 'o 'w 'a 'r 'd 's 0]
 
 make_color:         ['m 'a 'k 'e '_ 'c 'o 'l 'o 'r 0]
 
 ;;; Functions
 
-fn:     dbg 0, 0
+initialize-raylib:
+        dlopen(_rl1)
         ret()
 
-main:   dlopen(_rl1)
-        call3(0, InitWindow, WIDTH, HEIGHT, _Title)
-        call1(0, SetTargetFPS, 30)
-        make-color(255, 0, 255, 255)
-        put(bg, re)
-        make-color(0, 0, 255, 255)
-        put(fg, re)
-        call2(0, SetWindowSize, WIDTH, HEIGHT)
-mainloop:
-        call0(0, BeginDrawing)
+init-window:
+        ecall3(0, InitWindow, WIDTH, HEIGHT, _Title)
+        ecall1(0, SetTargetFPS, 30)
+        ret()
 
-        get(bg, ra)
-        call1(0, ClearBackground, ra)
-
+draw-player:
         get(fg, rd)
         get2(x, ra)
         get2(y, rb)
         get2(r, rc)
-        call4(0, DrawCircle, ra, rb, rc, rd)
+        ecall4(0, DrawCircle, ra, rb, rc, rd)
+        ret()
 
-        call0(0, GetMousePosition)
+move-towards:                   ; (x, y, xt, yt) -> (x', y')
+        ecall4(0, Vec2MoveTowards, ra, rb, rc, rd)
+        dbg 1,1
+        ret()
 
-        ;; modulo(ra, WIDTH)
-        ;; modulo(rb, HEIGHT)
+update-player:
+        ecall0(0, GetMousePosition) ; re = x', rf = y'
+        get2(x, ra)                 ; ra = x
+        get2(y, rb)                 ; rb = y
+        mov rc, re
+        mov rd, rf
+        call(move-towards)
+        dbg 1,1
         put2(x, re)
         put2(y, rf)
+        ret()
 
-        call0(0, GetMouseWheelMove)
+main:
+        lit ra, 67
+        lit rb, 42
+        lit rc, 69
+        lit rd, 420
+        call(initialize-raylib)
+        call(init-window)
 
-        ifz(re, {}, {
-          addn(rc, 5)
-          put2(r, rc)
-        })
+        make-color(255, 0, 255, 255)
+        put(bg, re)
+        make-color(0, 0, 255, 255)
+        put(fg, re)
+        ecall2(0, SetWindowSize, WIDTH, HEIGHT)
 
-        ifz(rf, {}, {
-          subn(rc, 5)
-          put2(r, rc)
-        })
+mainloop:
+        ecall0(0, WindowShouldClose)
+        ifz(re, {}, { jmp(finish) })
+        ecall0(0, BeginDrawing)
 
-        call0(0, EndDrawing)
+        get(bg, ra)
+        ecall1(0, ClearBackground, ra)
 
-        ;; dbg 0, 0
+        call(draw-player)
+        call(update-player)
 
-        call0(0, WindowShouldClose)
-        lit rb, mainloop
-        jiz rb, re
+        ;; ecall0(0, GetMouseWheelMove)
+
+        ;; ifz(re, {}, {
+        ;;   addn(rc, 5)
+        ;;   put2(r, rc)
+        ;; })
+
+        ;; ifz(rf, {}, {
+        ;;   subn(rc, 5)
+        ;;   put2(r, rc)
+        ;; })
+
+        ecall0(0, EndDrawing)
+        jmp(mainloop)
 finish:
         hlt 0, 0
 

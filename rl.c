@@ -1,4 +1,5 @@
 #include <raylib.h>
+#include <raymath.h>
 
 #include "vm.h"
 
@@ -9,6 +10,16 @@ static Color colors[512] = {0};
 #define VDO(f, ...) void W ## f (__attribute__((unused))State *s) { f(__VA_ARGS__); }
 
 #define SOF(s, A) ((void*)((s)->data+A(s)))
+
+void
+WVector2MoveTowards(State *s)
+{
+  Vector2 v = Vector2MoveTowards((Vector2){RA(s), RB(s)},
+                                 (Vector2){RC(s), RD(s)},
+                                 10);
+  RE(s) = (uint16_t)floor(v.x);
+  RF(s) = (uint16_t)floor(v.y);
+}
 
 void
 WWindowShouldClose(State *s)

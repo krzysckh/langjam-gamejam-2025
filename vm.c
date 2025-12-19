@@ -50,8 +50,9 @@
 #define IOR 0x0e /* IOR a b: a = a|b */
 #define LSH 0x0f /* LSH a b: a = a<<b */
 #define RSH 0x10 /* RSH a b: a = a>>b */
-#define LOD 0x11 /* LOD a b: load library with name pointed by A, save library pointer into B */
-#define EXC 0x12 /* EXC a b: execute function with name pointed by A from library poitner B. gets passed current State */
+#define LSS 0x11 /* LSS a b: a = a<b ? 1 : 0 */
+#define LOD 0x12 /* LOD a b: load library with name pointed by A, save library pointer into B */
+#define EXC 0x13 /* EXC a b: execute function with name pointed by A from library poitner B. gets passed current State */
 #define DBG 0xff /* DBG a b: print current state */
 
 #define I(s, ...) do { __VA_ARGS__ ; } while (0); (s)->pc += 2; break;
@@ -101,6 +102,7 @@ main(int argc, char **argv)
        B(IOR, |=)
        B(LSH, <<=)
        B(RSH, >>=)
+    case LSS: I(s, R1(s) = R1(s) < R2(s))
     case LOD: I(s, R2(s) = libmax; libs[libmax++] = dlopen((void*)(s->data+R1(s)), RTLD_NOW);
                 if (!libs[R2(s)]) errx(1, "couldn't open %s: %s", (char*)(s->data+R1(s)), dlerror()))
     case EXC: I(s, void (*f)(State*) = dlsym(libs[R2(s)], (void*)s->data+R1(s));
