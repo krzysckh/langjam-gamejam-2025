@@ -15,6 +15,8 @@
 constant WIDTH  = 1200
 constant HEIGHT = 500
 
+constant STACK-SIZE = (* (* 2 5) 512) ; 5 variables * 2 bytes * 512 frames
+
 ;;; Prelude, has to be defined at 0x0, call main:
 def put2(var, v) {
         lit rg, 8
@@ -29,8 +31,14 @@ def put2(var, v) {
         }
 
 _start:
+        ;; lit ra, stackpt
+        ;; dbg 0,0
         lit rf, stack           ; prepare stack
         put2(stackpt, rf)
+        lit ra, STACK-SIZE
+        add rf, ra
+        put2(next-alloc, rf)
+        put2(alloc-start, rf)
         lit ra, main            ; call main
         lit rb, 0
         jiz ra, rb
@@ -41,8 +49,11 @@ bg:     [0 0]
 fg:     [0 0]
 vy:     [0 0]
 r:      [0 15]
-y:      [0 (/ HEIGHT 2)]
+
+fst-ball:
 x:      [0 (/ WIDTH 2)]
+y:      [0 (/ HEIGHT 2)]
+next:   [0 0]
 
 ;;; Macros:
 def put(var, v) {
@@ -189,6 +200,7 @@ def ifl(a, b, then, else) {
         ifz(b, {...then}, {...else})
         }
 
+;;; Me when i do no bound checking
 def push(x) {
         get2(stackpt, rf)       ; rf = stackpt
         lit rg, x               ; rg = x
@@ -282,6 +294,7 @@ lol:
         lit ra, 0
         lit rh, _A1
         mem ra, rh
+        add ra, ra
         lit rh, 8
         lsh ra, 8
         lit rh, _A2
@@ -307,10 +320,32 @@ SetWindowSize:      ['W 'S 'e 't 'W 'i 'n 'd 'o 'w 'S 'i 'z 'e 0]
 GetMousePosition:   ['W 'G 'e 't 'M 'o 'u 's 'e 'P 'o 's 'i 't 'i 'o 'n 0]
 GetMouseWheelMove:  ['W 'G 'e 't 'M 'o 'u 's 'e 'W 'h 'e 'e 'l 'M 'o 'v 'e 0]
 Vec2MoveTowards:    ['W 'V 'e 'c 't 'o 'r '2 'M 'o 'v 'e 'T 'o 'w 'a 'r 'd 's 0]
+IsKeyPressed:       ['W 'I 's 'K 'e 'y 'P 'r 'e 's 's 'e 'd 0]
+;; DrawRectanglePro:   ['W 'D 'r 'a 'w 'R 'e 'c 't 'a 'n 'g 'l 'e 'P 'r 'o 0]
 
+_getrandom:         ['g 'e 't 'r 'a 'n 'd 'o 'm 0]
 make_color:         ['m 'a 'k 'e '_ 'c 'o 'l 'o 'r 0]
 
+oom:                ['O 'u 't '  'o 'f '  'm 'e 'm 'o 'r 'y '. 0]
+
 ;;; Functions
+
+oom-fail:
+        ...{
+loop:     lit ra, oom
+          mem rb, ra
+          ifz(rb, {
+            hlt 1, 1
+          }, {
+            put 1, ra
+            addn(ra, 1)
+            jmp(loop)
+          })
+        }
+
+getrandom:
+        ecall0(0, _getrandom)
+        ret()
 
 initialize-raylib:
         dlopen(_rl1)
@@ -318,49 +353,167 @@ initialize-raylib:
 
 init-window:
         ecall3(0, InitWindow, WIDTH, HEIGHT, _Title)
-        ecall1(0, SetTargetFPS, 30)
+        ecall1(0, SetTargetFPS, 60)
         ret()
 
-draw-player:
-        get(fg, rd)
-        get2(x, ra)
-        get2(y, rb)
-        get2(r, rc)
-        ecall4(0, DrawCircle, ra, rb, rc, rd)
-        ret()
+;; def draw-player() {
+;;         ecall0(0, GetMousePosition)
+;;         ;; subn(re, 5)
+;;         ;; subn(rf, 5)
+;;         lit rc, 0
+;;         get2(fg, rd)
+;;         dbg 0,0
+;;         ecall4(0, DrawRectanglePro, re, rf, rc, rd)
+;;         }
+
+draw-balls:
+        lit rf, fst-ball
+        ...{
+loop:
+          get2(rf, ra)
+          addn(rf, 2)
+          get2(rf, rb)
+          addn(rf, 2)
+          get2(rf, re)
+          mov rf, re
+
+          get(fg, rd)
+          get2(r, rc)
+          ecall4(0, DrawCircle, ra, rb, rc, rd)
+          ifz(rf, {
+            jmp(fin)
+          }, {
+            jmp(loop)
+          })
+
+fin:      ret()
+        }
+
+update-balls:
+        ecall0(0, GetMousePosition) ; re = x', rf = y'
+        lit rc, fst-ball
+        ...{
+loop:
+          push(rc)
+          get2(rc, ra)
+          addn(rc, 2)
+          get2(rc, rb)
+          addn(rc, 2)
+          get2(rc, rd)
+          push(rd)              ; push next onto stack (i ran out of regs)
+          ecall0(0, GetMousePosition) ; re = x', rf = y'
+          mov rc, re
+          mov rd, rf
+          call(move-towards)
+          pop(rc)
+          pop(ra)
+          put2(ra, re)
+          addn(ra, 2)
+          put2(ra, rf)
+          ifz(rc, { jmp(fin) }, { jmp(loop) })
+fin:      ret()
+        }
 
 move-towards:                   ; (x, y, xt, yt) -> (x', y')
         ecall4(0, Vec2MoveTowards, ra, rb, rc, rd)
-        dbg 1,1
+        ;; dbg 1,1
         ret()
 
-update-player:
-        ecall0(0, GetMousePosition) ; re = x', rf = y'
-        get2(x, ra)                 ; ra = x
-        get2(y, rb)                 ; rb = y
+;;; ball = struct {
+;;;   x    : u16
+;;;   y    : u16
+;;;   next : u16
+;;; }
+make-ball:
+        lit ra, fst-ball
+        call(find-last)
         mov rc, re
-        mov rd, rf
-        call(move-towards)
-        dbg 1,1
-        put2(x, re)
-        put2(y, rf)
+
+        lit ra, (* 2 3)
+        call(allocate)
+        mov ra, re              ; ra = ptr
+        mov rd, re
+        dbg 0,0
+        call(getrandom)
+        dbg 0,0
+        modulo(re, WIDTH)
+        put2(ra, re)
+        lit rh, 8
+        dbg ra, rh
+        addn(ra, 2)
+
+        call(getrandom)
+        modulo(re, HEIGHT)
+        put2(ra, re)
+        addn(ra, 2)
+        ;; lit re, 0
+        ;; put2(ra, re)
+
+        addn(rc, 4)
+        put2(rc, rd)
+        ;; get2(alloc-start, ra)
+        ;; lit rb, 16
+        ;; dbg ra, rb
+        ret()
+
+find-last:
+        ...{
+loop:
+          addn(ra, 4)
+          get2(ra, rb)
+          ifz(rb, {
+            subn(ra, 4)
+            mov re, ra
+            jmp(fin)
+          }, {
+            mov ra, rb
+            jmp(loop)
+          })
+fin:    ret()
+        }
+
+;;; > need to use an allocator today
+;;; > ask author if it's a bump allocator or a real allocator
+;;; > he doesn't understand
+;;; > pull out an illustrated diagram explaining what is bump and what is real
+;;; > he laughs and says "it's a good allocator sir"
+;;; > use it
+;;; > it's a bump allocator
+allocate:                       ; n -> ptr
+        get2(next-alloc, re)
+        mov rb, re
+        add rb, ra
+        addn(rb, 1)
+        put2(next-alloc, rb)
         ret()
 
 main:
-        lit ra, 67
-        lit rb, 42
-        lit rc, 69
-        lit rd, 420
+        get2(alloc-start, ra)
+        lit rb, 16
+        dbg ra, rb
+
         call(initialize-raylib)
         call(init-window)
 
-        make-color(255, 0, 255, 255)
+        get2(alloc-start, ra)
+        lit rb, 16
+        dbg ra, rb
+
+        make-color(0xde, 0xde, 0xde, 255)
         put(bg, re)
-        make-color(0, 0, 255, 255)
+        make-color(0x22, 0x22, 0x22, 255)
         put(fg, re)
         ecall2(0, SetWindowSize, WIDTH, HEIGHT)
 
 mainloop:
+        get(frame-counter, ra)
+        ifz(ra, {
+          put(frame-counter, 60)
+          call(make-ball)
+        }, {
+          subn(ra, 1)
+          put(frame-counter, ra)
+        })
         ecall0(0, WindowShouldClose)
         ifz(re, {}, { jmp(finish) })
         ecall0(0, BeginDrawing)
@@ -368,25 +521,16 @@ mainloop:
         get(bg, ra)
         ecall1(0, ClearBackground, ra)
 
-        call(draw-player)
-        call(update-player)
-
-        ;; ecall0(0, GetMouseWheelMove)
-
-        ;; ifz(re, {}, {
-        ;;   addn(rc, 5)
-        ;;   put2(r, rc)
-        ;; })
-
-        ;; ifz(rf, {}, {
-        ;;   subn(rc, 5)
-        ;;   put2(r, rc)
-        ;; })
+        call(draw-balls)
+        call(update-balls)
 
         ecall0(0, EndDrawing)
         jmp(mainloop)
 finish:
         hlt 0, 0
 
-stackpt: [0 0]
-stack:
+frame-counter:   [60]
+alloc-start:     [0 0]          ; allocator start
+next-alloc:      [0 0]          ; next allocation
+stackpt:         [0 0]          ; stack pointer
+stack:                          ; beginning of stack

@@ -1,4 +1,4 @@
-CFLAGS=-Wall -Wextra -std=c99 -g
+CFLAGS=-Wall -Wextra -std=gnu99 -g
 
 .SUFFIXES: .c .so .S .bin
 

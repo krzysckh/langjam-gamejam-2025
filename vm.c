@@ -6,6 +6,7 @@
 #include <string.h>
 #include <err.h>
 #include <dlfcn.h>
+#include <ctype.h>
 
 #include "vm.h"
 
@@ -68,6 +69,15 @@ print_state(State *s)
   putchar('\n');
 }
 
+void
+print_region(State *s)
+{
+  uint16_t begin = R1(s), sz = R2(s), i;
+  printf("Memory dump from %04x to %04x:\n", begin, begin+sz);
+  for (i = begin; i < begin+sz; ++i)
+    printf("%04x: %02x (%d)\t[%c]\n", i, s->data[i], s->data[i], isprint(s->data[i]) ? s->data[i] : ' ');
+}
+
 static uint16_t libmax = 0;
 static void *libs[0xffff] = {0};
 
@@ -75,6 +85,7 @@ int
 main(int argc, char **argv)
 {
   State *s = malloc(sizeof(State));
+  memset(s, 0, sizeof(State));
 
   assert(argc == 2);
 
@@ -107,7 +118,7 @@ main(int argc, char **argv)
                 if (!libs[R2(s)]) errx(1, "couldn't open %s: %s", (char*)(s->data+R1(s)), dlerror()))
     case EXC: I(s, void (*f)(State*) = dlsym(libs[R2(s)], (void*)s->data+R1(s));
                 if (f) f(s); else errx(1, "undefined in %d: %s", R2(s), (char*)(void*)s->data+R1(s)))
-    case DBG: I(s, print_state(s))
+    case DBG: I(s, if (D1(s) == 0 && D2(s) == 0) print_state(s); else print_region(s))
     default:
       errx(1, "unknown opcode %d", s->data[s->pc]);
     }

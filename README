@@ -1,1 +1,15 @@
-langjamgamejam.com
+$ make main.bin vm rl.so && ./vm main.bin
+
+this was meant to be a submission for https://langjamgamejam.com
+
+this is the code i wrote for this jam.
+there's some nasty bug i've introduced somewhere
+that makes some code in main.S dependant on certain memory layout
+where it should not (see: verywrong.mp4).
+
+i weren't able to debug it nor submit anything before the deadline.
+
+this was very fun, though the choice of "crazy, undebuggable assembly"
+alongside a "tiny, undebuggable vm" as a target language combo was not the wisest.
+
+- kpm

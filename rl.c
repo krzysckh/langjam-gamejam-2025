@@ -1,5 +1,6 @@
 #include <raylib.h>
 #include <raymath.h>
+#include <stdlib.h>
 
 #include "vm.h"
 
@@ -16,7 +17,7 @@ WVector2MoveTowards(State *s)
 {
   Vector2 v = Vector2MoveTowards((Vector2){RA(s), RB(s)},
                                  (Vector2){RC(s), RD(s)},
-                                 10);
+                                 5);
   RE(s) = (uint16_t)floor(v.x);
   RF(s) = (uint16_t)floor(v.y);
 }
@@ -25,6 +26,12 @@ void
 WWindowShouldClose(State *s)
 {
   RE(s) = WindowShouldClose();
+}
+
+void
+WIsKeyPressed(State *s)
+{
+  RE(s) = IsKeyPressed(RA(s));
 }
 
 void
@@ -51,10 +58,17 @@ make_color(State *s)
   RE(s) = nc++;
 }
 
+void
+getrandom(State *s)
+{
+  RE(s) = arc4random();
+}
+
 VDO(ClearBackground, colors[RA(s)])
 VDO(DrawCircle, RA(s), RB(s), RC(s), colors[RD(s)])
 VDO(SetWindowSize, RA(s), RB(s))
 VDO(InitWindow, RA(s), RB(s), SOF(s, RC));
 VDO(SetTargetFPS, RA(s))
+VDO(DrawRectanglePro, (Rectangle){RA(s), RB(s), 10, 10}, (Vector2){0, 0}, RD(s), colors[RE(s)])
 VOID(BeginDrawing);
 VOID(EndDrawing);
